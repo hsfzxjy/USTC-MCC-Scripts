@@ -1,0 +1,27 @@
+#!/bin/bash
+
+while true; do
+    sleep 15s
+    ALIVE_JOBS=$(qstat | awk '{ if ($5 == "R") print($1) }' | awk -F'.' '{ print($1) }')
+    for MID in {2..25} {31..34} {71..86}; do
+        MACHINE=$(printf "G1%02d" ${MID})
+        echo Solving $MACHINE... >&2
+        RUNNING_JOBS=$(ssh $MACHINE 'docker ps --format {{.Names}}')
+        for JOB_NAME in $RUNNING_JOBS; do
+            if [[ "${JOB_NAME}" =~ ^.+([0-9]{6})$ ]]; then
+                JID=${BASH_REMATCH[1]}
+            else
+                echo Something wrong with job name $JOB_NAME >&2
+                continue
+            fi
+
+            if [[ "${ALIVE_JOBS[@]}" =~ "${JID}" ]]; then
+                # echo $JOB_NAME alive
+                continue
+            else
+                echo Job $JID gone, killing $JOB_NAME on $MACHINE...
+                ssh $MACHINE "docker kill $JOB_NAME" &
+            fi
+        done
+    done
+done

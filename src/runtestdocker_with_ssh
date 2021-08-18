@@ -1,0 +1,39 @@
+#!/bin/bash
+[ $# -lt 2 ] && echo "Usage: $0 <username> <dockerimage> <other-param>" && exit
+UU=$1
+IMG=$2
+SHM=${3:-32G}
+nvidia-docker run -dit --name ${UU}_root --shm-size=${SHM} -v /ghome/$UU:/ghome/$UU -v /gdata/$UU:/gdata/$UU -v /gdata1/$UU:/gdata1/$UU -v /gdata2/$UU:/gdata2/$UU $4 $IMG /bin/bash
+[root@G101 ~]# cat runtestdocker_with_ssh
+#!/bin/bash
+
+[ $# -lt 2 ] && echo "Usage: $0 <username> <dockerimage> <other-param>" && exit
+
+UU=$1
+IMG=$2
+SHM=${3:-32G}
+
+SENTINEL='@@@FINISH_SENTINEL'
+
+read -d '' CMD <<EOF
+apt update
+export DEBIAN_FRONTEND=noninteractive
+apt --yes --force-yes install openssh-server -y
+service ssh start
+mkdir -p /root/.ssh/
+cat /ghome/${UU}/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+echo ${SENTINEL}
+cat -
+EOF
+
+PORT=$(comm -23 <(seq "1025" "65535" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n "1")
+
+CONTAINERID=$(nvidia-docker run -dit -p ${PORT}:22 --name ${UU}_root --shm-size=${SHM} -v /ghome/$UU:/ghome/$UU -v /gdata/$UU:/gdata/$UU -v /gdata1/$UU:/gdata1/$UU -v /gdata2/$UU:/gdata2/$UU $IMG bash -c "${CMD}")
+
+echo Listening on PORT: ${PORT}
+echo ${CONTAINERID}
+
+while IFS= read -r LINE; do
+    echo -n ${LINE}
+    printf '\r'
+done < <(docker logs -f ${CONTAINERID})
